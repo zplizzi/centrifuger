@@ -2,6 +2,8 @@
 #define _MOURISL_CLASSIFIER_HEADER
 
 #include <string.h>
+#include <stdlib.h>
+#include <sys/mman.h>
 
 #include "Taxonomy.hpp"
 #include "compactds/FMIndex.hpp"
@@ -863,10 +865,31 @@ public:
     FILE *fp ;
     char *nameBuffer = (char *)malloc(sizeof(char) * (strlen(idxPrefix) + 17))  ;  
  
-    // .1.cfr file for FM index
+    // .1.cfr file for FM index.
+    // If CENTRIFUGER_SHM_INDEX is set, mmap the file MAP_SHARED and let the big BWT arrays
+    // point into it, so multiple processes share one physical copy of the ~232GB index.
     sprintf(nameBuffer, "%s.1.cfr", idxPrefix) ;
     fp = fopen(nameBuffer, "r") ;
+    if (getenv("CENTRIFUGER_SHM_INDEX") != NULL)
+    {
+      fseeko(fp, 0, SEEK_END) ;
+      size_t fsize = (size_t)ftello(fp) ;
+      fseeko(fp, 0, SEEK_SET) ;
+      void *m = mmap(NULL, fsize, PROT_READ, MAP_SHARED, fileno(fp), 0) ;
+      if (m == MAP_FAILED)
+      {
+        Utils::PrintLog("WARNING: mmap of %s failed; loading index into private memory.", nameBuffer) ;
+      }
+      else
+      {
+        madvise(m, fsize, MADV_WILLNEED) ;
+        Utils::ShmBase() = (char *)m ;
+        Utils::ShmLen() = fsize ;
+        Utils::PrintLog("Using shared mmap for the FM-index (%lu bytes).", (unsigned long)fsize) ;
+      }
+    }
     _fm.Load(fp) ;
+    Utils::ShmBase() = NULL ; // subsequent loads (taxonomy, etc.) use normal private memory
     fclose(fp) ;
 
     // .2.cfr file is for taxonomy structure

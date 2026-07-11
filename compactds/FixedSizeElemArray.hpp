@@ -19,13 +19,15 @@ class FixedSizeElemArray
 {
 private:
   WORD *_W ;
-  size_t _size ; // memory size in word 
+  bool _Wborrowed ; // _W points into a shared mmap (do not free)
+  size_t _size ; // memory size in word
   int _l ;
   size_t _n ;
 public:
-  FixedSizeElemArray() 
+  FixedSizeElemArray()
   {
     _W = NULL ;
+    _Wborrowed = false ;
     _size = 0 ;
     _n = 0 ;
     _l = 0 ;
@@ -44,6 +46,7 @@ public:
     this->_l = l ;
     _size = Utils::BitsToWords(l * n) ;
     _W = Utils::MallocByBits(l * n) ;
+    _Wborrowed = false ;
   }
 
   // _l - number of bits for each element. <=0: automatically decide
@@ -91,9 +94,10 @@ public:
 
   void Free()
   {
-    if (_W != NULL)
+    if (_W != NULL && !_Wborrowed)
       free(_W) ;
     _W = NULL ;
+    _Wborrowed = false ;
     _n = _size = 0 ;
     _l = 0 ;
   }
@@ -399,8 +403,7 @@ public:
     LOAD_VAR(fp, _size) ;
     LOAD_VAR(fp, _l) ;
     LOAD_VAR(fp, _n) ;
-    _W = Utils::MallocByBits(WORDBITS * _size) ;
-    fread(_W, sizeof(_W[0]), Utils::BitsToWords(_n * _l), fp) ;
+    _W = Utils::LoadWordsOrBorrow(fp, Utils::BitsToWords(_n * _l), _Wborrowed) ;
   }
 } ;
 }

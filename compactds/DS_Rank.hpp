@@ -147,17 +147,20 @@ class DS_Rank9
 {
 private:
   uint64_t *_R ; // the partial sum of 1s for blocks of the bit vector (right exclusive), even position for large block, odd positins for compact subblock
+  bool _Rborrowed ; // _R points into a shared mmap (do not free)
   size_t _wordCnt ;
   size_t _space ;
 public:
-  DS_Rank9() 
+  DS_Rank9()
   {
     _R = NULL ;
+    _Rborrowed = false ;
     _space = 0 ;
   }
 
-  DS_Rank9(const WORD *B, const int &n) 
+  DS_Rank9(const WORD *B, const int &n)
   {
+    _Rborrowed = false ;
     Init(B, n) ;
   }
 
@@ -167,8 +170,10 @@ public:
   {
     if (_R != NULL)
     {
-      free(_R) ;
+      if (!_Rborrowed)
+        free(_R) ;
       _R = NULL ;
+      _Rborrowed = false ;
     }
   }
   
@@ -289,10 +294,7 @@ public:
     LOAD_VAR(fp, _wordCnt) ;
     const int b = 8 ;
     size_t blockCnt = DIV_CEIL(_wordCnt, b) ;
-    if (_R != NULL)
-      free(_R) ;
-    _R = (uint64_t *)malloc(sizeof(uint64_t) * blockCnt * 2) ;
-    fread(_R, sizeof(_R[0]), blockCnt * 2, fp) ; 
+    _R = (uint64_t *)Utils::LoadWordsOrBorrow(fp, blockCnt * 2, _Rborrowed) ;
   }
 } ;
 }
