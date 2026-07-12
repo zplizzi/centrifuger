@@ -276,7 +276,41 @@ public:
   {
     return (WORD *)calloc(BitsToWords(l), sizeof(WORD)) ;
   }
-  
+
+  // ---- Shared-memory index support ----
+  // When an index file is mmap'd (MAP_SHARED), big arrays are pointed directly into the
+  // mapping instead of being malloc'd+fread into private memory, so multiple centrifuger
+  // processes share one physical copy of the index. Base/len are set by the caller
+  // (Classifier::Init) around the FM-index load; NULL base => normal malloc behavior.
+  static char *&ShmBase() { static char *b = NULL ; return b ; }
+  static size_t &ShmLen() { static size_t l = 0 ; return l ; }
+
+  static bool IsShmPtr(const void *p)
+  {
+    return ShmBase() != NULL && (const char *)p >= ShmBase()
+      && (const char *)p < ShmBase() + ShmLen() ;
+  }
+
+  // Read nwords WORDs at the current file position. If a shared mmap is active, return a
+  // pointer into the mapping (borrowed=true, do not free) and skip the bytes in fp;
+  // otherwise malloc+fread a private copy (borrowed=false).
+  static WORD *LoadWordsOrBorrow(FILE *fp, size_t nwords, bool &borrowed)
+  {
+    size_t bytes = nwords * sizeof(WORD) ;
+    if (ShmBase() != NULL)
+    {
+      char *p = ShmBase() + ftello(fp) ;
+      fseeko(fp, (off_t)bytes, SEEK_CUR) ;
+      borrowed = true ;
+      return (WORD *)p ;
+    }
+    borrowed = false ;
+    WORD *x = (WORD *)malloc(bytes) ;
+    size_t got = fread(x, sizeof(WORD), nwords, fp) ;
+    (void)got ;
+    return x ;
+  }
+
   // Translate the space usage description (TB, GB, MB, KB) to bytes
   static size_t SpaceStringToBytes(const char *s) 
   {

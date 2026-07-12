@@ -16,6 +16,7 @@ private:
   
   // Variables for the bit vector
   WORD *_B ; // bitvector packed in WORD array
+  bool _Bborrowed ; // _B points into a shared mmap (do not free)
 
   // Variables for _ranking query
   DS_Rank9 _rank ;
@@ -33,6 +34,7 @@ public:
   {
     _n = _rb = _sb = 0 ;
     _B = NULL ;
+    _Bborrowed = false ;
     _selectSpeed = BITVECTOR_DEFAULT_SELECT_SPEED ;
     _selectTypeSupport = 3 ;
   }
@@ -63,16 +65,19 @@ public:
   {
     this->_n = n ;
     _B = Utils::MallocByBits(n) ;
-    
+    _Bborrowed = false ;
+
     _space = Utils::BitsToWordBytes(n) ;
   }
-  
+
   void Free()
   {
     if (_B != NULL)
     {
-      free(_B) ;
+      if (!_Bborrowed)
+        free(_B) ;
       _B = NULL ;
+      _Bborrowed = false ;
     }
     _rank.Free() ;
     _select.Free() ;
@@ -207,14 +212,14 @@ public:
     
     if (_n > 0)
     {
-      _B = Utils::MallocByBits(_n) ;
-      fread(_B, sizeof(*_B), Utils::BitsToWords(_n), fp) ;
+      _B = Utils::LoadWordsOrBorrow(fp, Utils::BitsToWords(_n), _Bborrowed) ;
       _rank.Load(fp) ;
       _select.Load(fp) ;
     }
     else
     {
       _B = NULL ;
+      _Bborrowed = false ;
       //_rank.Free() ;
       //_select.Free() ;
     }
